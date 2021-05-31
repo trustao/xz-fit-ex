@@ -1,0 +1,23 @@
+{
+  "name": "xz-fit-ex",
+  "description" : "行者导出fit -- TR",
+  "version": "0.0.1",
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": "avatar.png"
+  },
+  "permissions": [],
+  "manifest_version": 2,
+  "commands": {},
+  "background": {
+    "scripts": []
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://www.imxingzhe.com/*", "https://www.imxingzhe.com/*"],
+      "js": ["js/content.js"],
+      "css": [],
+      "run_at": "document_start"
+    }
+  ]
+}
