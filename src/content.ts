@@ -1,7 +1,6 @@
 import {log} from "./log";
 import {FitEncoder} from 'gpx2fit';
-
-
+import {transformCoord} from "./coord";
 
 log('Init');
 setTimeout(() => {
@@ -37,11 +36,18 @@ window.addEventListener('message', (ev) => {
   try {
     const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[]};
     log('MSG', data);
-    exportFit(data.originData, data.points);
+    exportFit(data.originData, data.points.map(i => {
+      const {lon, lat} = transformCoord(i.lon, i.lat);
+      return {...i, time: timeFix(i.time), lon, lat}
+    }));
   } catch (e) {
     console.error(e)
   }
 })
+
+function timeFix(value: number) {
+  return value + 28800000;
+}
 
 function exportFit(originData: ActivityInfo, points: PointRecord[]) {
   const encoder = new FitEncoder();
@@ -91,6 +97,7 @@ function exportFit(originData: ActivityInfo, points: PointRecord[]) {
     total_timer_time: tt,
     max_speed: originData.max_speed,
     max_altitude: originData.max_altitude,
+    // @ts-ignore
     min_altitude: Math.min(...points.map(i => i.altitude)),
     total_distance: originData.distance,
     total_ascent: originData.elevation_gain,

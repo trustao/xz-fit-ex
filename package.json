@@ -17,6 +17,8 @@
     "webpack-cli": "^4.7.0"
   },
   "dependencies": {
-    "gpx2fit": "0.0.4"
+    "coordtransform": "^2.1.2",
+    "gpx2fit": "0.0.4",
+    "tslib": "^2.2.0"
   }
 }
