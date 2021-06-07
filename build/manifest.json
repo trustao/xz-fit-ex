@@ -1,7 +1,7 @@
 {
   "name": "xz-fit-ex",
-  "description" : "行者导出fit -- TR",
-  "version": "0.0.2",
+  "description" : "行者/黑鸟骑行记录导出fit -- TR",
+  "version": "0.0.3",
   "browser_action": {
     "default_popup": "popup.html",
     "default_icon": "avatar.png"
@@ -14,7 +14,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://www.imxingzhe.com/*", "https://www.imxingzhe.com/*"],
+      "matches": [
+        "http://www.imxingzhe.com/*", "https://www.imxingzhe.com/*",
+        "http://www.blackbirdsport.com/*", "https://www.blackbirdsport.com/*"
+      ],
       "js": ["js/content.js"],
       "css": [],
       "run_at": "document_start"

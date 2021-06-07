@@ -1,19 +1,53 @@
 import {log} from "./log";
 import {FitEncoder} from 'gpx2fit';
 import {transformCoord} from "./coord";
+import {ActivityInfo, PointRecord} from "./interface";
 
-log('Init');
-setTimeout(() => {
-  const script = document.createElement('script');
-  script.innerText = `
-if (location.hash.startsWith('#!/workout/')) {
-  createButton();
+run();
+function run() {
+  log('Load');
+  initEx();
 }
+
+function initEx() {
+  setTimeout(() => {
+    const script = document.createElement('script');
+    script.innerText = `
+initButton();
+window.addEventListener('popstate',() => {
+  initButton();
+});
+window.addEventListener('click',() => {
+  setTimeout(() => {
+    initButton();
+  }, 1000)
+}, true);
+
+function initButton() {
+  if (location.hostname === 'www.blackbirdsport.com' && /\\/user\\/records\\/\\d+/.test(location.pathname) || location.hash.startsWith('#!/workout/')) {
+    createButton();
+  } else {
+    const btn = document.getElementById('__ex_fit_exporter_by_tr');
+    btn?.remove();
+  }
+}
+
 function createButton() {
-  const btn = document.createElement('div');
+  let btn = document.getElementById('__ex_fit_exporter_by_tr');
+  if (btn) {
+    return;
+  }
+  btn = document.createElement('div');
+  btn.id = '__ex_fit_exporter_by_tr';
   btn.innerText = '导出Fit';
   btn.style.cssText = "position: fixed;top: 0;right: 10px;z-index: 9999;background: #ff9800;color: rgb(255, 255, 255);line-height: 22px;height: 22px;padding: 0 10px;border-radius: 0 0 4px 4px;cursor: pointer;font-size: 12px;box-shadow: 0 0 4px -1px #fff;";
-  btn.addEventListener('click', exportCallback);
+  btn.addEventListener('click', () => {
+    if (location.hostname === 'www.blackbirdsport.com') {
+      exportCallbackBlackBird()
+    } else {
+      exportCallback()
+    }
+  });
   document.body.appendChild(btn);
 }
 
@@ -28,23 +62,67 @@ function exportCallback() {
   }
   window.postMessage(JSON.stringify({originData, points: points.map((e, i) => ({...e, lon: lonLat[i].lng, lat: lonLat[i].lat}))}), '*');
 }
+
+function exportCallbackBlackBird() {
+  const arr = location.pathname.split('/');
+  const id = arr[arr.length - 1];
+  fetch('/api/records/' + id + '/data', {
+    credentials: 'same-origin'
+  }).then(function (response) {
+    return response.json();
+  }).then(function (myJson) {
+    const originData = {
+      start_time: myJson.content.startTime,
+      end_time: myJson.content.endTime,
+      distance: +myJson.content.distance,
+      duration: +myJson.content.duration,
+      elevation_gain: +myJson.content.sumHeight,
+      avg_speed: +myJson.content.distance / +myJson.content.duration,
+      title: id,
+      max_altitude: 0,
+      max_speed: 0,
+    };
+    let mA = 0;
+    let mS = 0;
+    const points = myJson.content.track.split(';').map(i => {
+      const [lat, lon, altitude, speed, heartrate, cadence, _, t, mt] = i.split(',').map(ii => ii === '' ? null : +ii);
+      const s = speed / 3600;
+      mA = altitude > mA ? altitude : mA;
+      mS = s > mS ? s : mS;
+      const time = originData.start_time + t * 1000;
+      return {lat, lon, altitude, heartrate, cadence, time, speed: s};
+    });
+    originData.max_speed = mS;
+    originData.max_altitude = mA;
+    if (!points.length) {
+      alert('导出失败。');
+      return;
+    }
+    window.postMessage(JSON.stringify({originData, points}), '*');
+  }).catch(err => {
+    console.error(err);
+    alert('导出失败。');
+  })
+}
 `;
-  document.body.appendChild(script);
-}, 0);
+    document.head.appendChild(script);
+  }, 0);
 
-window.addEventListener('message', (ev) => {
-  try {
-    const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[]};
-    log('MSG', data);
-    exportFit(data.originData, data.points.map(i => {
-      const {lon, lat} = transformCoord(i.lon, i.lat);
-      return {...i, time: timeFix(i.time), lon, lat}
-    }));
-  } catch (e) {
-    console.error(e)
-  }
-})
-
+  window.addEventListener('message', (ev) => {
+    try {
+      const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[]};
+      log('MSG', data);
+      if (data?.originData && data.points?.length) {
+        exportFit(data.originData, data.points.map(i => {
+          const {lon, lat} = transformCoord(i.lon, i.lat);
+          return {...i, time: timeFix(i.time), lon, lat}
+        }));
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  })
+}
 function timeFix(value: number) {
   return value + 28800000;
 }
@@ -154,95 +232,3 @@ function haversine({ lat: lat1, lon: lon1 }, { lat: lat2, lon: lon2 }) {
   return d;
 }
 
-interface PointRecord {
-  altitude: number
-  cadence: number
-  heartrate: number
-  power: number
-  speed: number
-  time: number
-  lon: number
-  lat: number
-}
-
-interface ActivityInfo {
-  avg_cadence: number;
-  avg_heartrate: number;
-  avg_speed: number;
-  avg_wheel_rpm: number;
-  cadence_source: number;
-  calories: number;
-  category: number;
-  client_id: number;
-  comment_count: number;
-  create_time: number;
-  credits: number;
-  deleted: boolean
-  desc: string
-  distance: number;
-  down_avg_speed: number;
-  down_distance: number;
-  down_duration: number;
-  duration: number;
-  elevation_gain: number;
-  elevation_loss: number;
-  encoding_points: string
-  end_cadence: number;
-  end_time: number;
-  end_wheel: number;
-  extra_time: number;
-  flat_avg_speed: number;
-  flat_distance: number;
-  flat_duration: number;
-  heart_source: number;
-  hidden: boolean
-  is_export: number;
-  is_like: number;
-  is_valid: number;
-  like_count: number;
-  loc_source: number;
-  map_hidden: number;
-  map_id: number;
-  max_altitude: number;
-  max_cadence: number;
-  max_grade: number;
-  max_heartrate: number;
-  max_speed: number;
-  max_wheel_rpm: number;
-  merge_record: string
-  min_grade: number;
-  modify_time: number;
-  offset_lat: number;
-  offset_lng: number;
-  original_distance: number;
-  original_duration: number;
-  pic_url: string
-  poi: string
-  point_counts: number;
-  powerAvg: number;
-  powerFTP: number;
-  powerIF: number;
-  powerMax: number;
-  powerNP: number;
-  powerSource: number;
-  powerTSS: number;
-  powerVI: number;
-  segment_index: string
-  sport: number;
-  sport_change_count: number;
-  start_cadence: number;
-  start_time: number;
-  start_wheel: number;
-  step: number;
-  threed_workout: string
-  thumbnail: string
-  title: string
-  up_avg_speed: number;
-  up_distance: number;
-  up_duration: number;
-  upload_time: string
-  user: number;
-  user_name: string
-  uuid: string
-  workout_id: number;
-}
