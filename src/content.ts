@@ -262,13 +262,6 @@ function exportFit(originData: ActivityInfo, points: PointRecord[]) {
   });
 
   setTimeout(() => {
-    console.log('Encoder', encoder);
-    console.log('Head', encoder.header, encoder.header.byteLength);
-    console.log('dataArrayBuffer', encoder.dataArrayBuffer, encoder.dataLength);
-    const blob = encoder.createBlob();
-    blob.arrayBuffer().then(buffer => {
-      console.log(buffer)
-    })
     downloadFile(encoder, originData.title);
   }, 1000)
 }
