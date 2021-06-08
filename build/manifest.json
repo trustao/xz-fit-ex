@@ -1,7 +1,7 @@
 {
   "name": "xz-fit-ex",
   "description" : "行者/黑鸟骑行记录导出fit -- TR",
-  "version": "0.0.3",
+  "version": "0.0.6",
   "browser_action": {
     "default_popup": "popup.html",
     "default_icon": "avatar.png"

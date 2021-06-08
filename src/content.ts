@@ -28,7 +28,7 @@ function initButton() {
     createButton();
   } else {
     const btn = document.getElementById('__ex_fit_exporter_by_tr');
-    btn?.remove();
+    btn && btn.remove();
   }
 }
 
@@ -48,7 +48,15 @@ function createButton() {
       exportCallback()
     }
   });
-  document.body.appendChild(btn);
+  if (document.readyState === 'complete') {
+    document.body.appendChild(btn);
+  } else {
+    const fn = () => {
+      document.body.appendChild(btn);
+      document.removeEventListener('readystatechange', fn);
+    };
+    document.addEventListener('readystatechange', fn);
+  }
 }
 
 function exportCallback() {
@@ -77,6 +85,7 @@ function exportCallbackBlackBird() {
       distance: +myJson.content.distance,
       duration: +myJson.content.duration,
       elevation_gain: +myJson.content.sumHeight,
+      elevation_loss: 0,
       avg_speed: +myJson.content.distance / +myJson.content.duration,
       title: id,
       max_altitude: 0,
@@ -91,7 +100,7 @@ function exportCallbackBlackBird() {
       mS = s > mS ? s : mS;
       const time = originData.start_time + t * 1000;
       return {lat, lon, altitude, heartrate, cadence, time, speed: s};
-    });
+    }).filter(i => i.time);
     originData.max_speed = mS;
     originData.max_altitude = mA;
     if (!points.length) {
@@ -113,10 +122,7 @@ function exportCallbackBlackBird() {
       const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[]};
       log('MSG', data);
       if (data?.originData && data.points?.length) {
-        exportFit(data.originData, data.points.map(i => {
-          const {lon, lat} = transformCoord(i.lon, i.lat);
-          return {...i, time: timeFix(i.time), lon, lat}
-        }));
+        exportFit(data.originData, fixRecordPoints(data.points));
       }
     } catch (e) {
       console.error(e)
@@ -127,7 +133,61 @@ function timeFix(value: number) {
   return value + 28800000;
 }
 
+function fixRecordPoints(points: PointRecord[]): PointRecord[] {
+  return points.map(i => {
+    const {lon, lat} = transformCoord(i.lon, i.lat);
+    return {...i, time: timeFix(i.time), lon, lat}
+  }).reduce((res, point, i, arr) => {
+    if (point && point.time) {
+      res.push(point);
+      const next = arr[i + 1];
+      if (next && next.time) {
+        const fixPoints = computedInBetweenPoints(point, next);
+        log('Fix', fixPoints)
+        res.push(...fixPoints);
+      }
+    }
+    return res;
+  }, [])
+}
+
+function computedInBetweenPoints(a: PointRecord, b: PointRecord): PointRecord[] {
+  const duration = b.time - a.time;
+  if (duration < 2000) {
+    return []
+  }
+  const length = Math.floor(duration / 1000);
+  const lats = linearPoints(a.lat, b.lat, length);
+  const lons = linearPoints(a.lon, b.lon, length);
+  const altitudes = linearPoints(a.altitude, b.altitude, length, true);
+  const heartrates = linearPoints(a.heartrate, b.heartrate, length, true);
+  const speeds = linearPoints(a.speed, b.speed, length, true);
+  const cadences = linearPoints(a.cadence, b.cadence, length, true);
+  const times = linearPoints(a.time, b.time, length, true);
+  return speeds.map((_, i) => {
+    return {
+      lat: lats[i],
+      lon: lons[i],
+      heartrate: heartrates[i],
+      altitude: altitudes[i],
+      cadence: cadences[i],
+      time: times[i]
+    } as PointRecord;
+  })
+}
+
+function linearPoints(start: number, end: number, length: number, isInt?: boolean) {
+  const t = (end - start) / (length + 1);
+  return [...Array(length)].map((_, i) => {
+    let v = start + t * (i + 1);
+    v = isInt ? Math.round(v) : v;
+    return isNaN(v) ? undefined : v;
+  });
+}
+
+
 function exportFit(originData: ActivityInfo, points: PointRecord[]) {
+  log('Fixed', {originData, points});
   const encoder = new FitEncoder();
   const st = points[0].time;
   const et = points[points.length - 1].time;
@@ -202,6 +262,13 @@ function exportFit(originData: ActivityInfo, points: PointRecord[]) {
   });
 
   setTimeout(() => {
+    console.log('Encoder', encoder);
+    console.log('Head', encoder.header, encoder.header.byteLength);
+    console.log('dataArrayBuffer', encoder.dataArrayBuffer, encoder.dataLength);
+    const blob = encoder.createBlob();
+    blob.arrayBuffer().then(buffer => {
+      console.log(buffer)
+    })
     downloadFile(encoder, originData.title);
   }, 1000)
 }
