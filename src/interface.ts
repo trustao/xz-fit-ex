@@ -7,6 +7,7 @@ export interface PointRecord {
   time: number
   lon: number
   lat: number
+  moveTime: number
 }
 
 export interface ActivityInfo {

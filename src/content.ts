@@ -68,7 +68,7 @@ function exportCallback() {
     alert('导出失败，数据加载未完成。');
     return;
   }
-  window.postMessage(JSON.stringify({originData, points: points.map((e, i) => ({...e, lon: lonLat[i].lng, lat: lonLat[i].lat}))}), '*');
+  window.postMessage(JSON.stringify({type: 'XZ', originData, points: points.map((e, i) => ({...e, lon: lonLat[i].lng, lat: lonLat[i].lat}))}), '*');
 }
 
 function exportCallbackBlackBird() {
@@ -99,7 +99,7 @@ function exportCallbackBlackBird() {
       mA = altitude > mA ? altitude : mA;
       mS = s > mS ? s : mS;
       const time = originData.start_time + t * 1000;
-      return {lat, lon, altitude, heartrate, cadence, time, speed: s};
+      return {lat, lon, altitude, heartrate, cadence, time, speed: s, moveTime: mt};
     }).filter(i => i.time);
     originData.max_speed = mS;
     originData.max_altitude = mA;
@@ -107,22 +107,61 @@ function exportCallbackBlackBird() {
       alert('导出失败。');
       return;
     }
-    window.postMessage(JSON.stringify({originData, points}), '*');
+    const { eleGain, eleLoss } = elevationChange(points);
+    originData.elevation_loss = eleLoss;
+    window.postMessage(JSON.stringify({originData, points, type: 'BB'}), '*');
   }).catch(err => {
     console.error(err);
     alert('导出失败。');
   })
 }
+
+function elevationChange(points) {
+  let eleGain = 0;
+  let eleLoss = 0;
+  let lastEle;
+
+  for (const { altitude } of points) {
+    if (altitude === undefined) {
+      return {};
+    }
+
+    if (lastEle === undefined) {
+      lastEle = altitude;
+      continue;
+    }
+
+    const delta = altitude - lastEle;
+    if (Math.abs(delta) >= 4) {
+      lastEle = altitude;
+      if (delta > 0) {
+        eleGain += delta;
+      } else {
+        eleLoss -= delta;
+      }
+    }
+  }
+
+  return { eleGain, eleLoss };
+}
+
 `;
     document.head.appendChild(script);
   }, 0);
 
   window.addEventListener('message', (ev) => {
     try {
-      const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[]};
+      const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[], type: 'BB' | 'XZ'};
       log('MSG', data);
       if (data?.originData && data.points?.length) {
-        exportFit(data.originData, fixRecordPoints(data.points));
+        if (data.type === 'BB') {
+          exportFit(data.originData, fixRecordPoints(data.points));
+        } else {
+          exportFit(data.originData, data.points.map(i => {
+            const {lon, lat} = transformCoord(i.lon, i.lat);
+            return {...i, time: timeFix(i.time), lon, lat}
+          }));
+        }
       }
     } catch (e) {
       console.error(e)
@@ -134,16 +173,12 @@ function timeFix(value: number) {
 }
 
 function fixRecordPoints(points: PointRecord[]): PointRecord[] {
-  return points.map(i => {
-    const {lon, lat} = transformCoord(i.lon, i.lat);
-    return {...i, time: timeFix(i.time), lon, lat}
-  }).reduce((res, point, i, arr) => {
+  return points.reduce((res, point, i, arr) => {
     if (point && point.time) {
       res.push(point);
       const next = arr[i + 1];
       if (next && next.time) {
         const fixPoints = computedInBetweenPoints(point, next);
-        log('Fix', fixPoints)
         res.push(...fixPoints);
       }
     }
@@ -156,15 +191,17 @@ function computedInBetweenPoints(a: PointRecord, b: PointRecord): PointRecord[] 
   if (duration < 2000) {
     return []
   }
-  const length = Math.floor(duration / 1000);
+  const length = b.moveTime - a.moveTime;
+  const stopL = Math.floor(duration / 1000) - length;
   const lats = linearPoints(a.lat, b.lat, length);
   const lons = linearPoints(a.lon, b.lon, length);
   const altitudes = linearPoints(a.altitude, b.altitude, length, true);
   const heartrates = linearPoints(a.heartrate, b.heartrate, length, true);
   const speeds = linearPoints(a.speed, b.speed, length, true);
   const cadences = linearPoints(a.cadence, b.cadence, length, true);
-  const times = linearPoints(a.time, b.time, length, true);
-  return speeds.map((_, i) => {
+  const times = linearPoints(a.time + stopL * 1000, b.time, length, true);
+  const stopPoints = [...Array(stopL)].map((_, i) => ({...a, speed: 0, time: a.time + (i + 1) * 1000}));
+  const movePoints = speeds.map((_, i) => {
     return {
       lat: lats[i],
       lon: lons[i],
@@ -173,7 +210,8 @@ function computedInBetweenPoints(a: PointRecord, b: PointRecord): PointRecord[] 
       cadence: cadences[i],
       time: times[i]
     } as PointRecord;
-  })
+  });
+  return [...stopPoints, ...movePoints];
 }
 
 function linearPoints(start: number, end: number, length: number, isInt?: boolean) {
@@ -187,7 +225,7 @@ function linearPoints(start: number, end: number, length: number, isInt?: boolea
 
 
 function exportFit(originData: ActivityInfo, points: PointRecord[]) {
-  log('Fixed', {originData, points});
+  log('exportFit', {originData, points});
   const encoder = new FitEncoder();
   const st = points[0].time;
   const et = points[points.length - 1].time;
@@ -231,7 +269,7 @@ function exportFit(originData: ActivityInfo, points: PointRecord[]) {
     start_position_long: points[0].lon,
     avg_speed: originData.avg_speed,
     total_moving_time: originData.duration,
-    total_elapsed_time: tt,
+    total_elapsed_time: originData.duration,
     total_timer_time: tt,
     max_speed: originData.max_speed,
     max_altitude: originData.max_altitude,
