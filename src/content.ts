@@ -68,7 +68,7 @@ function exportCallback() {
     alert('导出失败，数据加载未完成。');
     return;
   }
-  window.postMessage(JSON.stringify({type: 'XZ', originData, points: points.map((e, i) => ({...e, lon: lonLat[i].lng, lat: lonLat[i].lat}))}), '*');
+  window.postMessage(JSON.stringify({offset: window.__FIT_EX_TIME_OFFSET__, type: 'XZ', originData, points: points.map((e, i) => ({...e, lon: lonLat[i].lng, lat: lonLat[i].lat}))}), '*');
 }
 
 function exportCallbackBlackBird() {
@@ -109,7 +109,7 @@ function exportCallbackBlackBird() {
     }
     const { eleGain, eleLoss } = elevationChange(points);
     originData.elevation_loss = eleLoss;
-    window.postMessage(JSON.stringify({originData, points, type: 'BB'}), '*');
+    window.postMessage(JSON.stringify({offset: window.__FIT_EX_TIME_OFFSET__, originData, points, type: 'BB'}), '*');
   }).catch(err => {
     console.error(err);
     alert('导出失败。');
@@ -151,7 +151,7 @@ function elevationChange(points) {
 
   window.addEventListener('message', (ev) => {
     try {
-      const data = JSON.parse(ev.data) as {originData: ActivityInfo, points: PointRecord[], type: 'BB' | 'XZ'};
+      const data = JSON.parse(ev.data) as {offset, originData: ActivityInfo, points: PointRecord[], type: 'BB' | 'XZ'};
       log('MSG', data);
       if (data?.originData && data.points?.length) {
         if (data.type === 'BB') {
@@ -159,7 +159,7 @@ function elevationChange(points) {
         } else {
           exportFit(data.originData, data.points.map(i => {
             const {lon, lat} = transformCoord(i.lon, i.lat);
-            return {...i, time: timeFix(i.time), lon, lat}
+            return {...i, time: timeFix(i.time, +data.offset), lon, lat}
           }));
         }
       }
@@ -168,8 +168,8 @@ function elevationChange(points) {
     }
   })
 }
-function timeFix(value: number) {
-  return value + 28800000;
+function timeFix(value: number, offset?: number) {
+  return value + 28800000 + (isFinite(offset) ? offset : 0);
 }
 
 function fixRecordPoints(points: PointRecord[]): PointRecord[] {
